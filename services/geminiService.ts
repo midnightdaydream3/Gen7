@@ -16,8 +16,9 @@ if (typeof window !== 'undefined' && !(window as any)._fetchPatched) {
         
         if (url && url.includes('generativelanguage.googleapis.com')) {
           const controller = new AbortController();
-          // 25 second hard timeout at the network level to free up the socket
-          const timeoutId = setTimeout(() => controller.abort(new Error("Network Timeout")), 25000); 
+          // 60 second hard timeout at the network level to free up the socket
+          // Generating 5 complex USMLE questions can take 40-50 seconds.
+          const timeoutId = setTimeout(() => controller.abort(new Error("Network Timeout")), 60000); 
           
           const newInit = { ...init, signal: controller.signal };
           if (init?.signal) {
@@ -49,9 +50,10 @@ const fetchWithRetry = async (fn: () => Promise<any>, maxRetries = 3, initialDel
   while (retries <= maxRetries) {
     let timeoutId: any;
     try {
-      // Add a 30-second timeout to prevent Promises from hanging forever when the app is backgrounded/resumed
+      // Add a 65-second timeout to prevent Promises from hanging forever when the app is backgrounded/resumed
       // This is a fallback in case the fetch monkey-patch fails
-      const timeoutMs = 30000;
+      // Generating complex USMLE questions can take 40-50 seconds
+      const timeoutMs = 65000;
       const timeoutPromise = new Promise((_, reject) => {
         timeoutId = setTimeout(() => reject(new Error(`Request timeout after ${timeoutMs}ms`)), timeoutMs);
       });
@@ -230,7 +232,7 @@ export const generateQuestions = async (
         ...q,
         options: shuffledOptions,
         correctIndex: newCorrectIndex,
-        id: q.id && !q.id.startsWith('IM-') ? q.id : `q-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: `q-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         tags: [
           ...(q.tags || []), 
           ...examTypes, 
@@ -326,7 +328,7 @@ export const generateSimilarQuestions = async (
         ...q,
         options: shuffledOptions,
         correctIndex: newCorrectIndex,
-        id: q.id && !q.id.startsWith('IM-') ? q.id : `sim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: `sim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         tags: [
           ...(q.tags || []), 
           ...examTypes, 
@@ -365,7 +367,11 @@ export const generateMasteryCards = async (question: Question): Promise<MasteryC
     });
 
     const cards = JSON.parse(response.text || "[]");
-    return cards.map((c: any) => ({ ...c, parentId: question.id }));
+    return cards.map((c: any) => ({ 
+      ...c, 
+      parentId: question.id,
+      id: `mc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    }));
   });
 };
 
