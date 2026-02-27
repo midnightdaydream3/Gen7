@@ -2,13 +2,65 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { MedicalSpecialty, ExamType, ClinicalComplexity, Question, MasteryCard, StudyPlan } from "../types";
 
+// Custom fetch wrapper to enforce a hard timeout on Gemini API calls.
+// Mobile browsers often freeze sockets when backgrounded, causing the SDK to hang forever and exhaust the 6-connection limit.
+if (typeof window !== 'undefined' && !(window as any)._fetchPatched) {
+  try {
+    (window as any)._fetchPatched = true;
+    const originalFetch = window.fetch;
+    
+    // Only patch if we can
+    Object.defineProperty(window, 'fetch', {
+      value: async function(input: RequestInfo | URL, init?: RequestInit) {
+        const url = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : (input as Request).url);
+        
+        if (url && url.includes('generativelanguage.googleapis.com')) {
+          const controller = new AbortController();
+          // 25 second hard timeout at the network level to free up the socket
+          const timeoutId = setTimeout(() => controller.abort(new Error("Network Timeout")), 25000); 
+          
+          const newInit = { ...init, signal: controller.signal };
+          if (init?.signal) {
+            init.signal.addEventListener('abort', () => controller.abort(init.signal.reason));
+          }
+          
+          try {
+            const response = await originalFetch(input, newInit);
+            clearTimeout(timeoutId);
+            return response;
+          } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
+          }
+        }
+        return originalFetch(input, init);
+      },
+      writable: true,
+      configurable: true
+    });
+  } catch (e) {
+    console.warn("Could not patch window.fetch for timeouts", e);
+  }
+}
+
 // Helper for exponential backoff to handle 429s and RPC errors gracefully
-const fetchWithRetry = async (fn: () => Promise<any>, maxRetries = 5, initialDelay = 3000) => {
+const fetchWithRetry = async (fn: () => Promise<any>, maxRetries = 3, initialDelay = 2000) => {
   let retries = 0;
   while (retries <= maxRetries) {
+    let timeoutId: any;
     try {
-      return await fn();
+      // Add a 30-second timeout to prevent Promises from hanging forever when the app is backgrounded/resumed
+      // This is a fallback in case the fetch monkey-patch fails
+      const timeoutMs = 30000;
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`Request timeout after ${timeoutMs}ms`)), timeoutMs);
+      });
+      
+      const result = await Promise.race([fn(), timeoutPromise]);
+      clearTimeout(timeoutId);
+      return result;
     } catch (error: any) {
+      clearTimeout(timeoutId);
       // Robust parsing for potentially nested error objects from GoogleGenAI SDK
       const rawMsg = error?.message || error?.error?.message || JSON.stringify(error);
       const status = error?.status || error?.code || error?.error?.code || error?.error?.status;
@@ -18,8 +70,8 @@ const fetchWithRetry = async (fn: () => Promise<any>, maxRetries = 5, initialDel
       // 429: Rate Limit / Quota Exceeded
       const isRateLimit = msg.includes('429') || status === 429 || status === 'RESOURCE_EXHAUSTED' || msg.includes('quota');
       
-      // 500/503/Unknown: Transient Server/Network errors (RPC, XHR)
-      const isRpcError = msg.includes('Rpc failed') || msg.includes('xhr error') || msg.includes('code: 6') || msg.includes('500') || status === 500 || status === 503 || status === 'UNKNOWN' || msg.includes('Failed to fetch') || msg.includes('NetworkError');
+      // 500/503/Unknown/Timeout: Transient Server/Network errors (RPC, XHR, stalled sockets)
+      const isRpcError = msg.includes('Network Timeout') || msg.includes('abort') || msg.includes('timeout') || msg.includes('Rpc failed') || msg.includes('xhr error') || msg.includes('code: 6') || msg.includes('500') || status === 500 || status === 503 || status === 'UNKNOWN' || msg.includes('Failed to fetch') || msg.includes('NetworkError');
       
       if ((isRateLimit || isRpcError) && retries < maxRetries) {
         const delay = initialDelay * Math.pow(2, retries) + (Math.random() * 1000);
@@ -127,13 +179,20 @@ export const generateQuestions = async (
   examTypes: ExamType[],
   complexity: ClinicalComplexity,
   count: number = 5,
-  topics?: string
+  topics?: string,
+  existingTags?: string[]
 ): Promise<Question[]> => {
   return fetchWithRetry(async () => {
     const ai = getAIInstance();
+    
+    const avoidPrompt = existingTags && existingTags.length > 0 
+      ? `\nNOTE: To ensure variety within this specific block of questions, try to avoid repeating these recently covered topics unless they are exceptionally high-yield: ${existingTags.slice(-30).join(', ')}.` 
+      : "";
+
     const prompt = `Act as an expert Medical Board Exam constructor.
     USMLE ${examTypes.join("/")} ${complexity} level. Specialties: ${specialties.join(", ")}. ${topics ? "Topics: " + topics : ""}. 
     Generate ${count} vignettes with 5 options and detailed rationale. 
+    ${avoidPrompt}
     
     ${GENERATION_PROTOCOL}
 

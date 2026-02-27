@@ -65,12 +65,12 @@ export const SRSReview: React.FC<SRSReviewProps> = ({ questions, onRate, onClose
           {current.type === 'mastery' ? (
             <div className="space-y-4">
               <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Review Layer: {(current.data as MasteryCard).type}</span>
-              <p className="text-3xl font-black leading-tight text-slate-800 dark:text-slate-100">{(current.data as MasteryCard).front}</p>
+              <p className="text-lg sm:text-3xl font-black leading-tight text-slate-800 dark:text-slate-100">{(current.data as MasteryCard).front}</p>
             </div>
           ) : (
             <div className="space-y-4">
                <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Full Vignette Challenge</span>
-               <p className="text-2xl leading-relaxed text-slate-800 dark:text-slate-100 font-medium italic">"{(current.data as Question).vignette}"</p>
+               <p className="text-base sm:text-2xl leading-relaxed text-slate-800 dark:text-slate-100 font-medium italic">"{(current.data as Question).vignette}"</p>
             </div>
           )}
         </div>
@@ -79,9 +79,9 @@ export const SRSReview: React.FC<SRSReviewProps> = ({ questions, onRate, onClose
           <Button variant="primary" className="w-full py-6 text-xl rounded-3xl" onClick={() => setShowAnswer(true)}>Reveal Solution</Button>
         ) : (
           <div className="space-y-8 animate-in zoom-in-95 duration-300">
-             <div className="p-10 bg-blue-600 dark:bg-blue-700 rounded-[2.5rem] text-white shadow-2xl">
+             <div className="p-6 sm:p-10 bg-blue-600 dark:bg-blue-700 rounded-[2rem] sm:rounded-[2.5rem] text-white shadow-2xl">
                 <h4 className="text-[10px] font-black uppercase tracking-widest mb-2 opacity-70">Clinical High-Yield</h4>
-                <p className="text-3xl font-black leading-tight italic">
+                <p className="text-lg sm:text-3xl font-black leading-tight italic">
                   "{current.type === 'mastery' ? (current.data as MasteryCard).back : (current.data as Question).explanation.keyLearningPoint}"
                 </p>
              </div>

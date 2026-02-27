@@ -22,6 +22,9 @@ interface QuestionCardProps {
   masteryCards?: MasteryCard[];
   onDissect?: (q: Question, forceRegen?: boolean) => Promise<void>;
   onUpdateDeepDive?: (insight: string) => void;
+  onQuit?: (currentAnswer: number | null) => void;
+  activeTimeMsRef?: React.MutableRefObject<number>;
+  lastActiveTimeRef?: React.MutableRefObject<number>;
 }
 
 const SimpleMarkdown: React.FC<{ content: string }> = ({ content }) => {
@@ -83,7 +86,10 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
   autoReinforce,
   masteryCards,
   onDissect,
-  onUpdateDeepDive
+  onUpdateDeepDive,
+  onQuit,
+  activeTimeMsRef,
+  lastActiveTimeRef
 }) => {
   const isAnswered = selectedAnswer !== null;
   const isCorrect = selectedAnswer === question.correctIndex;
@@ -100,6 +106,33 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
 
   // Use persistent narrative if available
   const [narrative, setNarrative] = useState<string | null>(question.deepDive || null);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!activeTimeMsRef || !lastActiveTimeRef) return;
+    
+    const updateTimer = () => {
+      if (!document.hidden) {
+        const delta = Date.now() - lastActiveTimeRef.current;
+        const currentElapsed = activeTimeMsRef.current + (delta > 0 && delta < 86400000 ? delta : 0);
+        setElapsed(currentElapsed);
+        localStorage.setItem('abdu_active_time', currentElapsed.toString());
+      } else {
+        setElapsed(activeTimeMsRef.current);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [activeTimeMsRef, lastActiveTimeRef]);
+
+  const formatTime = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+    const s = (totalSeconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
 
   useEffect(() => {
     // Reset ALL local state when question changes
@@ -202,7 +235,15 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
       <div className="space-y-2 px-1">
         <div className="flex justify-between items-end text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-slate-400">
           <span>Item {currentIndex + 1} / {totalQuestions}</span>
-          <span>{Math.round(progress)}%</span>
+          <div className="flex items-center gap-3">
+            {activeTimeMsRef && (
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md text-slate-500 dark:text-slate-400">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <span className="tabular-nums">{formatTime(elapsed)}</span>
+              </div>
+            )}
+            <span>{Math.round(progress)}%</span>
+          </div>
         </div>
         <div className="h-2 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
           <div 
@@ -291,17 +332,27 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
             )}
            </div>
            
-          {!isAnswered && onSkip && (
-             <button 
-              onClick={onSkip}
-              className="px-3 sm:px-6 py-1.5 text-[10px] sm:text-sm font-bold text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 flex items-center gap-1 sm:gap-2 transition-colors group/skip truncate"
-             >
-               Skip
-               <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 transform group-hover/skip:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-               </svg>
-             </button>
-          )}
+          <div className="flex items-center gap-2 ml-auto">
+            {onQuit && (
+               <button 
+                onClick={() => onQuit(selectedAnswer)}
+                className="px-3 sm:px-6 py-1.5 text-[10px] sm:text-sm font-bold text-red-400 hover:text-red-600 dark:text-red-500 dark:hover:text-red-400 flex items-center gap-1 sm:gap-2 transition-colors truncate"
+               >
+                 Quit
+               </button>
+            )}
+            {!isAnswered && onSkip && (
+               <button 
+                onClick={onSkip}
+                className="px-3 sm:px-6 py-1.5 text-[10px] sm:text-sm font-bold text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 flex items-center gap-1 sm:gap-2 transition-colors group/skip truncate"
+               >
+                 Skip
+                 <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 transform group-hover/skip:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                 </svg>
+               </button>
+            )}
+          </div>
         </div>
       </div>
 

@@ -197,7 +197,7 @@ export const BookmarksView: React.FC<BookmarksViewProps> = ({ bookmarks, onClose
                                 <span className={`px-3 py-1 mb-4 rounded-full text-white text-[9px] sm:text-[10px] font-black uppercase tracking-widest ${getLayerColor(currentLayer.type)}`}>
                                   {currentLayer.type}
                                 </span>
-                                <p className="text-base sm:text-2xl font-black text-center leading-tight text-slate-800 dark:text-slate-100 break-words w-full whitespace-pre-wrap">{currentLayer.front}</p>
+                                <p className="text-sm sm:text-2xl font-black text-center leading-tight text-slate-800 dark:text-slate-100 break-words w-full whitespace-pre-wrap">{currentLayer.front}</p>
                                 <div className="mt-6 flex items-center gap-2 text-slate-400">
                                    <span className="text-[10px] font-black uppercase tracking-widest animate-pulse">Tap to flip</span>
                                    <svg className="w-4 h-4 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
@@ -205,7 +205,7 @@ export const BookmarksView: React.FC<BookmarksViewProps> = ({ bookmarks, onClose
                               </div>
                               {/* Back Face */}
                               <div className="col-start-1 row-start-1 backface-hidden rotate-y-180 flex flex-col items-center justify-center p-6 sm:p-12 rounded-[1.5rem] sm:rounded-[2.5rem] bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-2xl">
-                                <p className="text-lg sm:text-3xl font-black text-center leading-tight italic break-words w-full whitespace-pre-wrap">"{currentLayer.back}"</p>
+                                <p className="text-sm sm:text-3xl font-black text-center leading-tight italic break-words w-full whitespace-pre-wrap">"{currentLayer.back}"</p>
                               </div>
                             </div>
                           </div>

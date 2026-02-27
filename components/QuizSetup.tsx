@@ -68,7 +68,7 @@ export const QuizSetup: React.FC<QuizSetupProps> = ({
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-12">
       {activeSessionProgress && onResume && (
-        <div className="bg-blue-600 dark:bg-blue-700 p-8 rounded-[2rem] text-white shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-6 animate-in slide-in-from-top-4 duration-500">
+        <div className="bg-blue-600 dark:bg-blue-900 p-8 rounded-[2rem] text-white shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-6 animate-in slide-in-from-top-4 duration-500 border border-blue-500 dark:border-blue-700">
           <div className="flex items-center gap-5">
             <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-md">
               <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -77,11 +77,11 @@ export const QuizSetup: React.FC<QuizSetupProps> = ({
               </svg>
             </div>
             <div>
-              <p className="text-xl font-black">Active Block Found</p>
-              <p className="text-blue-100/80 text-sm font-medium">
+              <p className="text-xl font-black text-white">Active Block Found</p>
+              <p className="text-blue-100 text-sm font-medium">
                 Question {activeSessionProgress.current} of {activeSessionProgress.total} in progress.
                 {activeSessionProgress.skippedCount > 0 && (
-                  <span className="block mt-1 bg-white/10 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-widest inline-block">
+                  <span className="block mt-1 bg-white/20 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-widest inline-block text-white">
                     {activeSessionProgress.skippedCount} Deferred at End
                   </span>
                 )}
@@ -97,7 +97,7 @@ export const QuizSetup: React.FC<QuizSetupProps> = ({
             </button>
             <Button 
               variant="primary" 
-              className="bg-white text-blue-600 hover:bg-blue-50 flex-1 sm:flex-none py-3 px-8" 
+              className="bg-white text-blue-700 dark:text-blue-900 hover:bg-blue-50 flex-1 sm:flex-none py-3 px-8 shadow-lg shadow-black/10" 
               onClick={onResume}
             >
               Resume Quiz

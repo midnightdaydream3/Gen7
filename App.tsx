@@ -42,6 +42,28 @@ const App: React.FC = () => {
   const [questionLibrary, setQuestionLibrary] = useState<Record<string, Question>>({});
   const [studyPlan, setStudyPlan] = useState<StudyPlan | null>(null);
   const [lifetimeStats, setLifetimeStats] = useState<LifetimeStats | undefined>(undefined);
+  const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+  const [pendingQuitAnswer, setPendingQuitAnswer] = useState<number | null>(null);
+
+  // Time tracking refs
+  const activeTimeMsRef = React.useRef(0);
+  const lastActiveTimeRef = React.useRef(Date.now());
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        const delta = Date.now() - lastActiveTimeRef.current;
+        if (delta > 0 && delta < 86400000) { // Sanity check: less than 1 day
+          activeTimeMsRef.current += delta;
+        }
+        localStorage.setItem('abdu_active_time', activeTimeMsRef.current.toString());
+      } else {
+        lastActiveTimeRef.current = Date.now();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -63,6 +85,15 @@ const App: React.FC = () => {
           try {
             const parsedSession = JSON.parse(savedSession);
             setSession(parsedSession);
+            
+            const savedTime = localStorage.getItem('abdu_active_time');
+            if (savedTime && !isNaN(parseInt(savedTime, 10))) {
+              activeTimeMsRef.current = parseInt(savedTime, 10);
+            } else {
+              activeTimeMsRef.current = 0;
+            }
+            lastActiveTimeRef.current = Date.now();
+
             if (parsedSession && Array.isArray(parsedSession.questions) && parsedSession.questions.length > 0) {
               setView('quiz');
             }
@@ -83,20 +114,31 @@ const App: React.FC = () => {
         // 2. BACKGROUND: Initialize DB and load heavy data
         // We don't block the UI for this, but we set isReady(true) after a short delay or success
         const dbPromise = async () => {
-          await dbService.init();
-          const data = await dbService.getAllData();
-          console.log("Data loaded from DB:", { 
-            historyCount: data.history.length, 
-            hasStats: !!data.lifetimeStats 
-          });
+          // Add a timeout to IndexedDB initialization to prevent hanging on "Loading Clinical Environment"
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("DB Init Timeout")), 5000));
+          const initTask = async () => {
+            await dbService.init();
+            return await dbService.getAllData();
+          };
           
-          setHistory(data.history);
-          setBookmarks(data.bookmarks);
-          setMasteryCards(data.masteryCards);
-          setSrsStates(data.srsStates);
-          setQuestionLibrary(data.questionLibrary);
-          setStudyPlan(data.studyPlan);
-          setLifetimeStats(data.lifetimeStats);
+          try {
+            const data = await Promise.race([initTask(), timeoutPromise]) as any;
+            
+            console.log("Data loaded from DB:", { 
+              historyCount: data.history.length, 
+              hasStats: !!data.lifetimeStats 
+            });
+            
+            setHistory(data.history);
+            setBookmarks(data.bookmarks);
+            setMasteryCards(data.masteryCards);
+            setSrsStates(data.srsStates);
+            setQuestionLibrary(data.questionLibrary);
+            setStudyPlan(data.studyPlan);
+            setLifetimeStats(data.lifetimeStats);
+          } catch (err) {
+            console.warn("DB init timed out or failed, continuing with empty state", err);
+          }
         };
 
         await dbPromise();
@@ -274,6 +316,10 @@ const App: React.FC = () => {
         autoReinforce
       };
       
+      activeTimeMsRef.current = 0;
+      lastActiveTimeRef.current = Date.now();
+      localStorage.setItem('abdu_active_time', '0');
+      
       setSession(newSession);
       setCompletedSession(null);
       setView('quiz');
@@ -286,11 +332,17 @@ const App: React.FC = () => {
         
         (async () => {
           try {
+            let accumulatedQuestions = [...questions];
             for (let i = 0; i < batchCount; i++) {
               const currentBatchSize = Math.min(remaining - (i * 10), 10);
               try {
-                const batch = await generateQuestions(specialties, examTypes, complexity, currentBatchSize, topics);
+                // Pass existing tags from THIS block only to avoid repetition
+                const currentTags = accumulatedQuestions.flatMap(q => q.tags || []);
+                
+                const batch = await generateQuestions(specialties, examTypes, complexity, currentBatchSize, topics, currentTags);
                 addToLibrary(batch);
+                accumulatedQuestions = [...accumulatedQuestions, ...batch];
+                
                 setSession(prev => {
                   if (!prev) return null;
                   return { ...prev, questions: [...prev.questions, ...batch] };
@@ -369,8 +421,15 @@ const App: React.FC = () => {
 
   const processSessionCompletion = async (finalSession: QuizSession) => {
     const correctCount = finalSession.userAnswers.reduce((acc, ans, idx) => ans === finalSession.questions[idx].correctIndex ? acc + 1 : acc, 0);
-    const accuracy = (correctCount / finalSession.questions.length) * 100;
     
+    // Calculate final active time
+    if (!document.hidden) {
+      activeTimeMsRef.current += Date.now() - lastActiveTimeRef.current;
+      lastActiveTimeRef.current = Date.now();
+    }
+    const finalTimeTaken = activeTimeMsRef.current;
+    localStorage.removeItem('abdu_active_time');
+
     const details = finalSession.questions.map((q, idx) => ({
       questionId: q.id,
       isCorrect: finalSession.userAnswers[idx] === q.correctIndex
@@ -381,7 +440,7 @@ const App: React.FC = () => {
       timestamp: Date.now(), 
       totalQuestions: finalSession.questions.length,
       correctAnswers: correctCount, 
-      timeTakenMs: Date.now() - finalSession.startTime,
+      timeTakenMs: finalTimeTaken,
       specialties: finalSession.specialties, 
       examTypes: finalSession.examTypes,
       complexity: finalSession.complexity, // Save complexity for analysis
@@ -448,6 +507,41 @@ const App: React.FC = () => {
 
   const startQuizFromTopic = (topic: string, count: number = 10, autoReinforce: boolean = false) => {
     startQuiz([MedicalSpecialty.INTERNAL_MEDICINE], [ExamType.STEP_2_CK], ClinicalComplexity.MEDIUM, count, topic, autoReinforce);
+  };
+
+  const handleQuitQuiz = (currentAnswer: number | null) => {
+    if (!session) return;
+    setPendingQuitAnswer(currentAnswer);
+    setShowQuitConfirm(true);
+  };
+
+  const executeQuit = () => {
+    setShowQuitConfirm(false);
+    if (!session) return;
+    
+    let finalAnswers = [...session.userAnswers];
+    let finalQuestions = [...session.questions];
+
+    if (pendingQuitAnswer !== null) {
+      finalAnswers[session.currentQuestionIndex] = pendingQuitAnswer;
+    }
+
+    const answeredCount = finalAnswers.filter(a => a !== undefined && a !== null).length;
+    if (answeredCount === 0) {
+      setSession(null);
+      setView('setup');
+      return;
+    }
+    
+    finalQuestions = finalQuestions.slice(0, answeredCount);
+    finalAnswers = finalAnswers.slice(0, answeredCount);
+    
+    const finalSession = { ...session, questions: finalQuestions, userAnswers: finalAnswers };
+    processSessionCompletion(finalSession);
+    setCompletedSession(finalSession);
+    setLastCompletedSession(finalSession);
+    setSession(null);
+    setView('results');
   };
 
   if (!isReady) {
@@ -525,6 +619,9 @@ const App: React.FC = () => {
             onDissect={dissectQuestion} 
             masteryCards={masteryCards[session.questions[session.currentQuestionIndex].id]} 
             onUpdateDeepDive={(insight) => updateDeepDive(session.questions[session.currentQuestionIndex].id, insight)}
+            onQuit={handleQuitQuiz}
+            activeTimeMsRef={activeTimeMsRef}
+            lastActiveTimeRef={lastActiveTimeRef}
           />
         )}
 
@@ -536,6 +633,21 @@ const App: React.FC = () => {
         {view === 'srs' && <SRSReview questions={dueSRSItems} onRate={updateSRS} onClose={() => setView('setup')} />}
         {view === 'bookmarks' && <BookmarksView bookmarks={bookmarks} onClose={() => setView('setup')} onRemove={toggleBookmark} masteryLayers={masteryCards} onDissect={dissectQuestion} />}
       </main>
+
+      {showQuitConfirm && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-[2rem] shadow-2xl max-w-md w-full border border-slate-100 dark:border-slate-800 animate-in zoom-in-95 duration-300">
+            <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 mb-3">End Block Early?</h3>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mb-8 leading-relaxed">
+              Your progress will be saved and analyzed based on the questions you've completed so far.
+            </p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setShowQuitConfirm(false)}>Cancel</Button>
+              <Button variant="primary" className="flex-1 bg-red-600 hover:bg-red-700 shadow-red-500/20" onClick={executeQuit}>Quit Block</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
